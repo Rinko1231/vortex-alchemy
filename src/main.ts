@@ -13,6 +13,7 @@ import { formatScore, formatTime } from "./game/presentation";
 import type {
   CellPos,
   GameSnapshot,
+  Piece,
   RotationDirection,
 } from "./game/types";
 import { UI_ASSETS } from "./ui/assets";
@@ -280,7 +281,7 @@ function openHelp(origin: "start" | "game" | "pause" = "start"): void {
       <li>四颗同色同阶的一、二、三阶棋子会合成高一阶。四阶是同色路线的终点。</li>
       <li>紫色万能黏胶只能替代一阶。四颗万能黏胶也能直接炼成圣杯。</li>
       <li>黑、白、红、黄各一颗四阶宝石时，合成圣杯并换来大笔时间。</li>
-      <li>合并后会在空出的三个格位原地补入新棋子；新棋子继续合并会形成连锁，连锁越深加时越多。</li>
+      <li>合并后棋子会沿列向下落，空出的位置由棋盘上方的新棋子补入；落定后的盘面若再次形成合并，就会进入下一段连锁。</li>
       <li>圣杯可以被做出来，也可以转动，但不能再作为材料参与合并。</li>
     </ul>
     <div class="modal-actions">
@@ -512,6 +513,7 @@ declare global {
       start: () => void;
       rotate: (row: number, col: number, direction?: RotationDirection) => boolean;
       snapshot: () => GameSnapshot | null;
+      board: () => Array<Piece | null>;
       moves: () => Array<{ row: number; col: number; direction: RotationDirection }>;
       end: () => void;
       setConfig: (partial: Partial<RunConfig>) => RunConfig;
@@ -524,6 +526,7 @@ window.__vortex = {
   start: startGame,
   rotate: (row, col, direction = 1) => scene.rotateForDebug(row, col, direction),
   snapshot: () => lastSnapshot,
+  board: () => scene.getBoard(),
   moves: () => scene.findPlayableMoves(),
   end: () => scene.endRunForDebug(),
   setConfig: (partial) => {

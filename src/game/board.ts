@@ -11,6 +11,8 @@ import {
   type Board,
   type CellPos,
   type CoreColor,
+  type GravityMove,
+  type GravityResult,
   type MergeEvent,
   type MergeGroup,
   type Piece,
@@ -255,6 +257,50 @@ function mergedPiece(group: MergeGroup, id: number): Piece {
   };
 }
 
+export function applyGravityAndRefill(
+  board: Board,
+  config: RunConfig,
+  rng: Rng,
+  idCounter: IdCounter,
+): GravityResult {
+  const moves: GravityMove[] = [];
+  const spawned: SpawnedPiece[] = [];
+
+  for (let col = 0; col < BOARD_SIZE; col += 1) {
+    let writeRow = BOARD_SIZE - 1;
+
+    for (let readRow = BOARD_SIZE - 1; readRow >= 0; readRow -= 1) {
+      const piece = board[cellIndex(readRow, col)];
+      if (!piece) continue;
+
+      if (readRow !== writeRow) {
+        board[cellIndex(readRow, col)] = null;
+        board[cellIndex(writeRow, col)] = piece;
+        moves.push({
+          pieceId: piece.id,
+          from: { row: readRow, col },
+          to: { row: writeRow, col },
+        });
+      }
+      writeRow -= 1;
+    }
+
+    const emptyCount = writeRow + 1;
+    for (let row = 0; row <= writeRow; row += 1) {
+      const piece = spawnPiece(idCounter.value, config, rng);
+      idCounter.value += 1;
+      board[cellIndex(row, col)] = piece;
+      spawned.push({
+        piece,
+        from: { row: row - emptyCount, col },
+        to: { row, col },
+      });
+    }
+  }
+
+  return { moves, spawned };
+}
+
 export function resolveBoard(
   board: Board,
   rotationCenter: CellPos,
@@ -278,6 +324,7 @@ export function resolveBoard(
 
     const group = chooseMergeGroup(groups, lastAnchor, rotationCenter);
     const anchor = { row: group.top, col: group.left };
+    const before = cloneBoard(board);
     const result = mergedPiece(group, idCounter.value);
     idCounter.value += 1;
 
@@ -286,14 +333,8 @@ export function resolveBoard(
     }
     board[cellIndex(anchor.row, anchor.col)] = result;
 
-    const spawned: SpawnedPiece[] = [];
-    for (const position of group.cells) {
-      if (position.row === anchor.row && position.col === anchor.col) continue;
-      const piece = spawnPiece(idCounter.value, config, rng);
-      idCounter.value += 1;
-      board[cellIndex(position.row, position.col)] = piece;
-      spawned.push({ pos: position, piece });
-    }
+    const gravity = applyGravityAndRefill(board, config, rng, idCounter);
+    const after = cloneBoard(board);
 
     chain += 1;
     const multiplier = chainMultiplier(chain, config);
@@ -311,7 +352,10 @@ export function resolveBoard(
       result,
       timeGain: eventTime,
       scoreGain: eventScore,
-      spawned,
+      before,
+      moves: gravity.moves,
+      spawned: gravity.spawned,
+      after,
     });
     lastAnchor = anchor;
   }

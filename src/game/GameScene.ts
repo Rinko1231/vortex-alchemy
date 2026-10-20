@@ -8,6 +8,7 @@ import type { RunConfig } from "./config";
 import {
   BOARD_SIZE,
   cellIndex,
+  type Board,
   type CellPos,
   type GameSnapshot,
   type MergeEvent,
@@ -205,13 +206,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderBoard(): void {
+    this.renderSnapshot(this.engine.board);
+  }
+
+  private renderSnapshot(board: Board): void {
     if (!this.pieceLayer) return;
     this.pieceLayer.removeAll(true);
     this.spritesByPieceId.clear();
 
     for (let row = 0; row < BOARD_SIZE; row += 1) {
       for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const piece = this.engine.board[cellIndex(row, col)];
+        const piece = board[cellIndex(row, col)];
         if (!piece) continue;
         const sprite = this.makePieceSprite(piece, { row, col });
         this.pieceLayer.add(sprite);
@@ -302,8 +307,10 @@ export class GameScene extends Phaser.Scene {
     this.clearHover();
     this.syncHud();
     await this.animateRotation(moving, group, direction);
+    if (outcome.events.length > 0) {
+      await this.playMergeEvents(outcome.events);
+    }
     this.renderBoard();
-    await this.playMergeEvents(outcome.events);
 
     this.engine.finishResolution();
     this.isAnimating = false;
@@ -383,15 +390,145 @@ export class GameScene extends Phaser.Scene {
   private async playMergeEvents(events: MergeEvent[]): Promise<void> {
     if (events.length === 0) return;
     for (const event of events) {
+      this.renderSnapshot(event.before);
       this.callbacks.onChain(event.chain, event.timeGain);
-      this.playMergeEffect(event);
-      const delay = this.engine.config.reducedMotion ? 90 : 250;
-      await this.wait(delay);
+      this.playMergeBurst(event);
+      await this.animateMergeAndDrop(event);
+      this.syncSpritesToBoard(event.after);
+      this.playLandingEffect(event);
+      await this.wait(this.engine.config.reducedMotion ? 50 : 140);
     }
     await this.wait(this.engine.config.reducedMotion ? 30 : 100);
   }
 
-  private playMergeEffect(event: MergeEvent): void {
+  private async animateMergeAndDrop(event: MergeEvent): Promise<void> {
+    const consumed = event.group.cells
+      .map((position) => {
+        const piece = event.before[cellIndex(position.row, position.col)];
+        return piece ? { piece, sprite: this.spritesByPieceId.get(piece.id) } : null;
+      })
+      .filter(
+        (entry): entry is { piece: Piece; sprite: Phaser.GameObjects.Image } =>
+          Boolean(entry?.sprite),
+      );
+
+    if (consumed.length > 0) {
+      await Promise.all(
+        consumed.map(
+          ({ piece, sprite }) =>
+            new Promise<void>((resolve) => {
+              const targetScaleX = sprite.scaleX * 0.2;
+              const targetScaleY = sprite.scaleY * 0.2;
+              this.tweens.add({
+                targets: sprite,
+                alpha: 0,
+                scaleX: targetScaleX,
+                scaleY: targetScaleY,
+                duration: this.engine.config.reducedMotion ? 30 : 90,
+                ease: "Cubic.In",
+                onComplete: () => {
+                  this.spritesByPieceId.delete(piece.id);
+                  sprite.destroy();
+                  resolve();
+                },
+              });
+            }),
+        ),
+      );
+    }
+
+    const mergedSprite = this.makePieceSprite(event.result, event.anchor);
+    const targetScaleX = mergedSprite.scaleX;
+    const targetScaleY = mergedSprite.scaleY;
+    mergedSprite.setScale(targetScaleX * 0.3, targetScaleY * 0.3);
+    this.pieceLayer.add(mergedSprite);
+    this.spritesByPieceId.set(event.result.id, mergedSprite);
+    this.tweens.add({
+      targets: mergedSprite,
+      scaleX: targetScaleX,
+      scaleY: targetScaleY,
+      duration: this.engine.config.reducedMotion ? 40 : 130,
+      ease: "Back.Out",
+    });
+
+    await this.animateGravity(event);
+  }
+
+  private animateGravity(event: MergeEvent): Promise<void> {
+    const tweens: Promise<void>[] = [];
+
+    for (const move of event.moves) {
+      const sprite = this.spritesByPieceId.get(move.pieceId);
+      if (!sprite) continue;
+      const target = this.cellCenter(move.to);
+      const distance = Math.abs(move.to.row - move.from.row);
+      tweens.push(
+        this.tweenPromise({
+          targets: sprite,
+          x: target.x,
+          y: target.y,
+          duration: this.engine.config.reducedMotion ? 35 : 150 + distance * 28,
+          ease: "Bounce.Out",
+        }),
+      );
+    }
+
+    for (const spawned of event.spawned) {
+      const sprite = this.makePieceSprite(spawned.piece, spawned.from);
+      this.pieceLayer.add(sprite);
+      this.spritesByPieceId.set(spawned.piece.id, sprite);
+      const target = this.cellCenter(spawned.to);
+      const distance = spawned.to.row - spawned.from.row;
+      tweens.push(
+        this.tweenPromise({
+          targets: sprite,
+          x: target.x,
+          y: target.y,
+          duration: this.engine.config.reducedMotion ? 40 : 190 + distance * 24,
+          ease: "Bounce.Out",
+        }),
+      );
+    }
+
+    return tweens.length > 0 ? Promise.all(tweens).then(() => undefined) : Promise.resolve();
+  }
+
+  private tweenPromise(config: Phaser.Types.Tweens.TweenBuilderConfig): Promise<void> {
+    return new Promise((resolve) => {
+      this.tweens.add({
+        ...config,
+        onComplete: () => resolve(),
+      });
+    });
+  }
+
+  private syncSpritesToBoard(board: Board): void {
+    const liveIds = new Set<number>();
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const piece = board[cellIndex(row, col)];
+        if (!piece) continue;
+        liveIds.add(piece.id);
+        let sprite = this.spritesByPieceId.get(piece.id);
+        if (!sprite) {
+          sprite = this.makePieceSprite(piece, { row, col });
+          this.pieceLayer.add(sprite);
+          this.spritesByPieceId.set(piece.id, sprite);
+        } else {
+          const center = this.cellCenter({ row, col });
+          sprite.setPosition(center.x, center.y);
+        }
+      }
+    }
+
+    for (const [pieceId, sprite] of this.spritesByPieceId) {
+      if (liveIds.has(pieceId)) continue;
+      sprite.destroy();
+      this.spritesByPieceId.delete(pieceId);
+    }
+  }
+
+  private playMergeBurst(event: MergeEvent): void {
     const center = this.cellCenter(event.anchor);
     const burst = this.add
       .image(center.x, center.y, "pieces", 17)
@@ -410,8 +547,24 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => burst.destroy(),
     });
 
+    if (event.group.result === "grail" && !this.engine.config.reducedMotion) {
+      this.cameras.main.flash(180, 255, 215, 120, false);
+    }
+  }
+
+  private playLandingEffect(event: MergeEvent): void {
+    let resultPosition = event.anchor;
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        if (event.after[cellIndex(row, col)]?.id === event.result.id) {
+          resultPosition = { row, col };
+        }
+      }
+    }
+    const center = this.cellCenter(resultPosition);
+
     for (const spawned of event.spawned) {
-      const point = this.cellCenter(spawned.pos);
+      const point = this.cellCenter(spawned.to);
       const spark = this.add
         .image(point.x, point.y, "pieces", 23)
         .setOrigin(0.5)
@@ -449,10 +602,6 @@ export class GameScene extends Phaser.Scene {
       ease: "Cubic.Out",
       onComplete: () => label.destroy(),
     });
-
-    if (event.group.result === "grail" && !this.engine.config.reducedMotion) {
-      this.cameras.main.flash(180, 255, 215, 120, false);
-    }
   }
 
   private wait(duration: number): Promise<void> {

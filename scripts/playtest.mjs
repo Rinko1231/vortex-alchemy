@@ -89,13 +89,18 @@ assert.ok(countdownAfter < countdownBefore, "countdown should decrease during pl
 await page.mouse.click(point.x, point.y, {
   button: firstMove.direction === -1 ? "right" : "left",
 });
+await page.waitForTimeout(360);
+await page.screenshot({ path: resolve(outputDirectory, "04a-dropping.png"), fullPage: true });
 await page.waitForFunction(
   () => window.__vortex.snapshot()?.status === "playing",
   undefined,
   { timeout: 5000 },
 );
 const afterMove = await page.evaluate(() => window.__vortex.snapshot());
+const boardAfterMove = await page.evaluate(() => window.__vortex.board());
 assert.ok(afterMove && afterMove.score > 0, "a playable rotation should increase score");
+assert.equal(boardAfterMove.length, 64, "board should remain 8x8 after gravity");
+assert.ok(boardAfterMove.every(Boolean), "gravity refill should leave no empty cells");
 await page.screenshot({ path: resolve(outputDirectory, "04-after-merge.png"), fullPage: true });
 
 await page.locator("#pause-button").click();
@@ -167,6 +172,10 @@ const summary = {
   countdownBefore,
   countdownAfter,
   afterMove,
+  boardIntegrity: {
+    cells: boardAfterMove.length,
+    emptyCells: boardAfterMove.filter((piece) => !piece).length,
+  },
   pauseFrozen: pausedLater?.timeLeftMs === pausedAt?.timeLeftMs,
   resumedStatus: resumed?.status,
   gameOverVisible,

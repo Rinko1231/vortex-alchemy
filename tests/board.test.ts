@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyGravityAndRefill,
   countGrails,
   findAllMergeGroups,
   generateInitialBoard,
@@ -123,6 +124,30 @@ describe("merge detection", () => {
 });
 
 describe("board movement and resolution", () => {
+  it("drops pieces downward and refills empty top cells", () => {
+    const board: Board = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
+    const marker = core(999, "red", 2);
+    setCell(board, 2, 0, marker);
+
+    const idCounter: IdCounter = { value: 1000 };
+    const gravity = applyGravityAndRefill(
+      board,
+      DEFAULT_CONFIG,
+      new Rng("gravity-test"),
+      idCounter,
+    );
+
+    expect(board.every((piece) => piece !== null)).toBe(true);
+    expect(board[cellIndex(7, 0)]?.id).toBe(marker.id);
+    expect(gravity.moves).toContainEqual({
+      pieceId: marker.id,
+      from: { row: 2, col: 0 },
+      to: { row: 7, col: 0 },
+    });
+    expect(gravity.spawned.length).toBeGreaterThan(0);
+    expect(gravity.spawned.every((spawned) => spawned.from.row < 0)).toBe(true);
+  });
+
   it("rotates clockwise into the expected cells", () => {
     const board = baseBoard();
     const topLeft = board[cellIndex(0, 0)]!;
@@ -158,6 +183,9 @@ describe("board movement and resolution", () => {
     expect(outcome.events.length).toBeGreaterThan(0);
     expect(outcome.events[0]?.group.result).toBe(2);
     expect(outcome.timeGain).toBeGreaterThan(0);
+    expect(outcome.events[0]?.moves.length).toBeGreaterThan(0);
+    expect(outcome.events[0]?.spawned.every((spawned) => spawned.from.row < 0)).toBe(true);
+    expect(outcome.events[0]?.after.every((piece) => piece !== null)).toBe(true);
     expect(board.every((piece) => piece !== null)).toBe(true);
   });
 

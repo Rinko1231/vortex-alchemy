@@ -26,9 +26,21 @@ export interface MergeGroup {
   color: CoreColor | null;
 }
 
+export interface GravityMove {
+  pieceId: number;
+  from: CellPos;
+  to: CellPos;
+}
+
 export interface SpawnedPiece {
-  pos: CellPos;
   piece: Piece;
+  from: CellPos;
+  to: CellPos;
+}
+
+export interface GravityResult {
+  moves: GravityMove[];
+  spawned: SpawnedPiece[];
 }
 
 export interface MergeEvent {
@@ -38,7 +50,10 @@ export interface MergeEvent {
   result: Piece;
   timeGain: number;
   scoreGain: number;
+  before: Board;
+  moves: GravityMove[];
   spawned: SpawnedPiece[];
+  after: Board;
 }
 
 export interface RotationOutcome {
