@@ -67,10 +67,21 @@ const toScreen = (row, col) => ({
 const firstMove = initialMoves[0];
 const point = toScreen(firstMove.row, firstMove.col);
 await page.mouse.move(point.x, point.y);
-await page.waitForTimeout(180);
+await page.waitForFunction(
+  () => {
+    const hint = document.querySelector("#rotate-hint");
+    return (
+      hint?.classList.contains("visible") &&
+      Number.parseFloat(getComputedStyle(hint).opacity) > 0.8
+    );
+  },
+  undefined,
+  { timeout: 2500 },
+);
 const hintVisible = await page.locator("#rotate-hint").evaluate((node) => {
   return node.classList.contains("visible") && Number.parseFloat(getComputedStyle(node).opacity) > 0;
 });
+assert.ok(hintVisible, "rotation hint should be visible after hovering over a 2×2 center");
 const hintBox = await page.locator("#rotate-hint").boundingBox();
 assert.ok(hintBox, "rotation hint should have a bounding box");
 const renderedCellSize = canvasBox.width * (84 / 800);
@@ -86,9 +97,13 @@ await page.waitForTimeout(500);
 const countdownAfter = await page.evaluate(() => window.__vortex.snapshot()?.timeLeftMs ?? 0);
 assert.ok(countdownAfter < countdownBefore, "countdown should decrease during play");
 
-await page.mouse.click(point.x, point.y, {
-  button: firstMove.direction === -1 ? "right" : "left",
-});
+if (firstMove.direction === -1) {
+  await page.keyboard.down("Shift");
+  await page.mouse.click(point.x, point.y, { button: "left" });
+  await page.keyboard.up("Shift");
+} else {
+  await page.mouse.click(point.x, point.y, { button: "left" });
+}
 await page.waitForTimeout(360);
 await page.screenshot({ path: resolve(outputDirectory, "04a-dropping.png"), fullPage: true });
 await page.waitForFunction(
