@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#25142f" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <meta
+      name="description"
+      content="一款以 2×2 旋转、同色同阶合并和连锁加时为核心的炼金浏览器游戏。"
+    />
+    <title>Vortex Alchemy · 旋涡炼金</title>
+  </head>
+  <body>
+    <div id="app">
+      <div class="ambient-vignette" aria-hidden="true"></div>
+
+      <div class="game-shell">
+        <header class="hud">
+          <div class="hud-left">
+            <div class="score-chip" aria-label="当前分数">
+              <img id="score-icon" class="badge-icon" alt="" />
+              <span class="score-copy">
+                <span class="micro-label">炼金值</span>
+                <strong id="score-value">0</strong>
+              </span>
+            </div>
+          </div>
+
+          <div class="timer-cluster">
+            <div id="timer-plate" class="timer-plate">
+              <span id="time-value">01:30.0</span>
+            </div>
+            <div class="best-line">最佳 <span id="best-value">0</span></div>
+          </div>
+
+          <div class="hud-right">
+            <button id="help-button" class="icon-button" type="button" aria-label="玩法说明">
+              <img id="help-icon" alt="" />
+            </button>
+            <button id="pause-button" class="icon-button" type="button" aria-label="暂停">
+              <img id="pause-icon" alt="" />
+            </button>
+            <button id="settings-button" class="icon-button" type="button" aria-label="设置">
+              <img id="settings-icon" alt="" />
+            </button>
+          </div>
+        </header>
+
+        <main class="stage-wrap">
+          <div class="board-shell">
+            <div id="game-stage" aria-label="8×8 炼金棋盘"></div>
+            <div id="rotate-hint" class="rotate-hint" aria-hidden="true">
+              <span class="bracket tl"></span>
+              <span class="bracket tr"></span>
+              <span class="bracket bl"></span>
+              <span class="bracket br"></span>
+              <img id="rotate-hint-image" alt="" />
+            </div>
+            <div id="chain-toast" class="chain-toast" aria-live="polite"></div>
+          </div>
+        </main>
+
+        <footer class="status-bar">
+          <div class="status-chip">
+            <img id="chain-icon" alt="" />
+            <span>连锁 <b id="chain-value">0</b></span>
+          </div>
+          <div class="status-chip">
+            <img id="grail-icon" alt="" />
+            <span>圣杯 <b id="grail-value">0</b></span>
+          </div>
+          <div class="status-hint">点击 2×2 中心旋转</div>
+        </footer>
+      </div>
+
+      <section id="start-screen" class="screen-layer visible" aria-label="开始界面">
+        <div class="title-card">
+          <div class="ribbon-wrap">
+            <img id="ribbon-image" class="ribbon-image" alt="" />
+            <div class="title-copy">
+              <h1>VORTEX ALCHEMY</h1>
+              <p>旋涡炼金</p>
+            </div>
+          </div>
+          <p class="tagline">转动两格见方的炼金阵，让同色同阶的器皿自行熔合。</p>
+          <p class="lead">
+            每次合并都会换回时间，连锁越深，倒计时涨得越多。凑齐黑、白、红、黄的四阶宝石，就能炼成圣杯。
+          </p>
+          <div class="start-actions">
+            <button id="start-button" class="text-button primary" type="button">
+              <span>开始实验</span>
+            </button>
+            <button id="start-settings-button" class="text-button secondary" type="button">
+              <span>调整规则</span>
+            </button>
+          </div>
+          <p class="control-tip">左键 / 轻触：顺时针 · 右键 / Shift：逆时针</p>
+        </div>
+      </section>
+
+      <div id="modal-backdrop" class="screen-layer hidden" aria-hidden="true">
+        <section
+          id="modal-card"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+        >
+          <button id="modal-close" class="modal-close" type="button" aria-label="关闭">×</button>
+          <div id="modal-content"></div>
+        </section>
+      </div>
+
+      <section id="game-over-screen" class="screen-layer hidden" aria-label="本局结算">
+        <div class="result-card">
+          <p class="eyebrow">实验记录</p>
+          <h2 id="result-title">时间耗尽</h2>
+          <div class="result-grid">
+            <div><span>炼金值</span><strong id="result-score">0</strong></div>
+            <div><span>最长连锁</span><strong id="result-chain">0</strong></div>
+            <div><span>圣杯</span><strong id="result-grails">0</strong></div>
+          </div>
+          <p id="result-note" class="result-note"></p>
+          <div class="start-actions">
+            <button id="restart-button" class="text-button primary" type="button">
+              <span>再来一局</span>
+            </button>
+            <button id="result-settings-button" class="text-button secondary" type="button">
+              <span>调整规则</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
