@@ -38,6 +38,9 @@
             <button id="help-button" class="icon-button" type="button" aria-label="玩法说明">
               <img id="help-icon" alt="" />
             </button>
+            <button id="sound-button" class="icon-button" type="button" aria-label="关闭声音">
+              <img id="sound-icon" alt="" />
+            </button>
             <button id="pause-button" class="icon-button" type="button" aria-label="暂停">
               <img id="pause-icon" alt="" />
             </button>
@@ -70,6 +73,28 @@
             <img id="grail-icon" alt="" />
             <span>圣杯 <b id="grail-value">0</b></span>
           </div>
+          <div class="item-tray" aria-label="炼金道具">
+            <button
+              id="item-wildcard-button"
+              class="item-button"
+              type="button"
+              title="万能精粹：把随机一个核心棋子变成万能棋子"
+              disabled
+            >
+              <img id="item-wildcard-icon" alt="" />
+              <span class="item-copy"><b>万能</b><span id="item-wildcard-count">0</span></span>
+            </button>
+            <button
+              id="item-upgrade-button"
+              class="item-button"
+              type="button"
+              title="升阶药剂：把随机一个一阶或二阶核心棋子升一阶"
+              disabled
+            >
+              <img id="item-upgrade-icon" alt="" />
+              <span class="item-copy"><b>升阶</b><span id="item-upgrade-count">0</span></span>
+            </button>
+          </div>
           <div class="status-hint">点击 2×2 中心旋转</div>
         </footer>
       </div>
@@ -85,7 +110,7 @@
           </div>
           <p class="tagline">转动两格见方的炼金阵，让同色同阶的器皿自行熔合。</p>
           <p class="lead">
-            每次合并都会换回时间，连锁越深，倒计时涨得越多。凑齐黑、白、红、黄的四阶宝石，就能炼成圣杯。
+            默认从五分钟开始。每次合并都会换回时间，连锁越深，倒计时涨得越多。炼成圣杯会再加五分钟，并让后续二阶棋子更容易出现。
           </p>
           <div class="start-actions">
             <button id="start-button" class="text-button primary" type="button">

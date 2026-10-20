@@ -9,21 +9,25 @@ export interface RunConfig {
   tier1Weight: number;
   tier2Weight: number;
   wildcardWeight: number;
+  tier2BonusPerGrail: number;
+  bonusChance: number;
   reverseRotation: boolean;
   reducedMotion: boolean;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
-  startingTimeSec: 90,
-  gainTier2: 2,
-  gainTier3: 4,
-  gainTier4: 7,
-  gainGrail: 45,
-  chainStep: 0.25,
-  chainCap: 2.5,
-  tier1Weight: 88,
-  tier2Weight: 10,
+  startingTimeSec: 300,
+  gainTier2: 4,
+  gainTier3: 8,
+  gainTier4: 18,
+  gainGrail: 300,
+  chainStep: 0.3,
+  chainCap: 3,
+  tier1Weight: 82,
+  tier2Weight: 16,
   wildcardWeight: 2,
+  tier2BonusPerGrail: 4,
+  bonusChance: 5,
   reverseRotation: true,
   reducedMotion: false,
 };
@@ -41,16 +45,22 @@ function asNumber(value: unknown, fallback: number): number {
 
 export function normalizeConfig(candidate: Partial<RunConfig>): RunConfig {
   return {
-    startingTimeSec: clamp(asNumber(candidate.startingTimeSec, DEFAULT_CONFIG.startingTimeSec), 30, 300),
-    gainTier2: clamp(asNumber(candidate.gainTier2, DEFAULT_CONFIG.gainTier2), 0, 10),
-    gainTier3: clamp(asNumber(candidate.gainTier3, DEFAULT_CONFIG.gainTier3), 0, 20),
-    gainTier4: clamp(asNumber(candidate.gainTier4, DEFAULT_CONFIG.gainTier4), 0, 30),
-    gainGrail: clamp(asNumber(candidate.gainGrail, DEFAULT_CONFIG.gainGrail), 0, 120),
+    startingTimeSec: clamp(asNumber(candidate.startingTimeSec, DEFAULT_CONFIG.startingTimeSec), 60, 900),
+    gainTier2: clamp(asNumber(candidate.gainTier2, DEFAULT_CONFIG.gainTier2), 0, 20),
+    gainTier3: clamp(asNumber(candidate.gainTier3, DEFAULT_CONFIG.gainTier3), 0, 40),
+    gainTier4: clamp(asNumber(candidate.gainTier4, DEFAULT_CONFIG.gainTier4), 0, 60),
+    gainGrail: clamp(asNumber(candidate.gainGrail, DEFAULT_CONFIG.gainGrail), 0, 600),
     chainStep: clamp(asNumber(candidate.chainStep, DEFAULT_CONFIG.chainStep), 0, 0.5),
     chainCap: clamp(asNumber(candidate.chainCap, DEFAULT_CONFIG.chainCap), 1, 5),
     tier1Weight: clamp(asNumber(candidate.tier1Weight, DEFAULT_CONFIG.tier1Weight), 0, 100),
     tier2Weight: clamp(asNumber(candidate.tier2Weight, DEFAULT_CONFIG.tier2Weight), 0, 100),
     wildcardWeight: clamp(asNumber(candidate.wildcardWeight, DEFAULT_CONFIG.wildcardWeight), 0, 100),
+    tier2BonusPerGrail: clamp(
+      asNumber(candidate.tier2BonusPerGrail, DEFAULT_CONFIG.tier2BonusPerGrail),
+      0,
+      20,
+    ),
+    bonusChance: clamp(asNumber(candidate.bonusChance, DEFAULT_CONFIG.bonusChance), 0, 30),
     reverseRotation:
       typeof candidate.reverseRotation === "boolean"
         ? candidate.reverseRotation

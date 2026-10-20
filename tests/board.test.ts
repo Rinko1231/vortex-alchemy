@@ -6,6 +6,7 @@ import {
   generateInitialBoard,
   resolveBoard,
   rotateBoardInPlace,
+  spawnPiece,
   type IdCounter,
 } from "../src/game/board";
 import { DEFAULT_CONFIG } from "../src/game/config";
@@ -121,6 +122,24 @@ describe("merge detection", () => {
     );
     expect(group?.result).toBe("grail");
   });
+
+  it("awards an item when a bonus piece is consumed", () => {
+    const board = baseBoard();
+    setCell(board, 0, 0, { ...core(101, "red", 1), bonus: "upgrade" });
+    setCell(board, 0, 1, core(102, "red", 1));
+    setCell(board, 1, 0, core(103, "red", 1));
+    setCell(board, 1, 1, core(104, "red", 1));
+
+    const outcome = resolveBoard(
+      board,
+      { row: 0, col: 0 },
+      1,
+      { ...DEFAULT_CONFIG, bonusChance: 0 },
+      new Rng("bonus-item-test"),
+      { value: 700 },
+    );
+    expect(outcome.itemsAwarded).toContain("upgrade");
+  });
 });
 
 describe("board movement and resolution", () => {
@@ -189,6 +208,26 @@ describe("board movement and resolution", () => {
     expect(board.every((piece) => piece !== null)).toBe(true);
   });
 
+  it("awards eighteen seconds for a tier-four merge by default", () => {
+    const board: Board = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
+    setCell(board, 0, 0, core(701, "red", 3));
+    setCell(board, 0, 1, core(702, "red", 3));
+    setCell(board, 1, 0, core(703, "red", 3));
+    setCell(board, 1, 1, core(704, "red", 3));
+
+    const outcome = resolveBoard(
+      board,
+      { row: 0, col: 0 },
+      1,
+      DEFAULT_CONFIG,
+      new Rng("tier-four-time-test"),
+      { value: 800 },
+    );
+
+    expect(outcome.events[0]?.group.result).toBe(4);
+    expect(outcome.events[0]?.timeGain).toBe(18);
+  });
+
   it("creates a grail from four wildcards and counts it", () => {
     const board = baseBoard();
     for (let row = 0; row < 2; row += 1) {
@@ -215,6 +254,23 @@ describe("board movement and resolution", () => {
   it("generates an initially quiet board with at least one playable rotation", () => {
     const generated = generateInitialBoard(DEFAULT_CONFIG, new Rng("initial-board-test"));
     expect(findAllMergeGroups(generated.board)).toHaveLength(0);
+  });
+
+  it("raises tier-two spawn frequency as more grails are made", () => {
+    const config = { ...DEFAULT_CONFIG, bonusChance: 0 };
+    const withoutGrails = new Rng("tier-two-baseline");
+    const withGrails = new Rng("tier-two-baseline");
+    let baseTierTwo = 0;
+    let boostedTierTwo = 0;
+
+    for (let index = 0; index < 5000; index += 1) {
+      const basePiece = spawnPiece(index, config, withoutGrails, 0);
+      const boostedPiece = spawnPiece(index, config, withGrails, 8);
+      if (basePiece.kind === "core" && basePiece.tier === 2) baseTierTwo += 1;
+      if (boostedPiece.kind === "core" && boostedPiece.tier === 2) boostedTierTwo += 1;
+    }
+
+    expect(boostedTierTwo).toBeGreaterThan(baseTierTwo);
   });
 });
 

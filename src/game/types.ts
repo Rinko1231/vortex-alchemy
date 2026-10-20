@@ -4,11 +4,12 @@ export const CORE_COLORS = ["black", "white", "red", "yellow"] as const;
 export type CoreColor = (typeof CORE_COLORS)[number];
 export type Tier = 1 | 2 | 3 | 4;
 export type RotationDirection = 1 | -1;
+export type ItemType = "wildcard" | "upgrade";
 
 export type Piece =
-  | { id: number; kind: "core"; color: CoreColor; tier: Tier }
-  | { id: number; kind: "wildcard" }
-  | { id: number; kind: "grail" };
+  | { id: number; kind: "core"; color: CoreColor; tier: Tier; bonus?: ItemType }
+  | { id: number; kind: "wildcard"; bonus?: ItemType }
+  | { id: number; kind: "grail"; bonus?: ItemType };
 
 export type Cell = Piece | null;
 export type Board = Cell[];
@@ -50,20 +51,39 @@ export interface MergeEvent {
   result: Piece;
   timeGain: number;
   scoreGain: number;
+  itemsAwarded: ItemType[];
   before: Board;
   moves: GravityMove[];
   spawned: SpawnedPiece[];
   after: Board;
 }
 
-export interface RotationOutcome {
-  center: CellPos;
-  direction: RotationDirection;
+export interface CascadeResolution {
   chain: number;
   timeGain: number;
   scoreGain: number;
   grailsGained: number;
+  itemsAwarded: ItemType[];
   events: MergeEvent[];
+}
+
+export interface RotationOutcome extends CascadeResolution {
+  center: CellPos;
+  direction: RotationDirection;
+}
+
+export interface ItemUseResult {
+  item: ItemType;
+  position: CellPos;
+  before: Piece;
+  after: Piece;
+  boardAfterItem: Board;
+  cascade: CascadeResolution | null;
+}
+
+export interface ItemCounts {
+  wildcard: number;
+  upgrade: number;
 }
 
 export type GameStatus = "ready" | "playing" | "resolving" | "paused" | "game-over";
@@ -75,6 +95,8 @@ export interface GameSnapshot {
   chain: number;
   maxChain: number;
   grails: number;
+  grailsMade: number;
+  items: ItemCounts;
   seed: string;
 }
 

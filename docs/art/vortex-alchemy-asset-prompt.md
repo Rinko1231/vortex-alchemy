@@ -33,6 +33,30 @@ Draw only the sixteen colored vessels, one wildcard, one Holy Grail, one rotatio
 | 3 | 黑三阶圆底烧瓶 | 白三阶圆底烧瓶 | 红三阶圆底烧瓶 | 黄三阶圆底烧瓶 | 透明空位 | 合并火花 |
 | 4 | 黑四阶宝石 | 白四阶宝石 | 红四阶宝石 | 黄四阶宝石 | 透明空位 | 连锁光带 |
 
+## 小道具图标提示词
+
+当前 `src/assets/items/wildcard-item.png` 与 `upgrade-item.png` 已使用专属素材：根目录的 `omnipotent.png` 与 `upgrade.png` 会先按透明轮廓裁切，再居中缩成 256×256。运行 `npm run sprites:items:import` 可重新导入。旧的主图集裁图方式仍保留为 `npm run sprites:items`，但默认使用新的专属图标。
+
+两张专属图都已实际接到底部道具栏，并在桌面与 390×844 手机视口下检查过按钮尺寸和图标辨识度。
+
+游戏内图标会缩到约 27–32 像素显示，因此轮廓与主色比细节更重要。下面的提示词保留为后续重绘或生成同系列变体时的基准。
+
+两张图都保持与棋子和 UI 相同的美术语言：粗而圆润的深紫描边、饱和的紫与蜂蜜金、简单的双色明暗、一枚清晰高光、透明背景、不烘焙文字。不要生成整张贴图、棋盘格、白底、投影、外框、水印或签名。
+
+### 万能精粹
+
+```text
+Create one single production-ready casual match-3 game item icon on a fully transparent square canvas. The icon is a compact alchemical phial filled with wildcard essence: a round-bottom glass bottle with a thick, smooth deep-plum outline, a warm cream glass rim, a small honey-gold stopper, and bright violet liquid inside, with a clean white spiral vortex at its center and two or three large round bubbles. Add one small crisp four-point golden sparkle attached to the bottle, but keep the silhouette compact and centered so it remains readable at 28 pixels. Use chunky rounded shapes, saturated amethyst violet with honey-gold accents, simple two-tone cel shading, one clean highlight, and the same cheerful casual puzzle-game style as a bright match-3 sprite sheet. The entire background must be fully transparent with alpha 0. Do not draw a frame, badge plate, circle background, grid, checkerboard, shadow outside the object, text, numbers, letters, logo, watermark, or signature. Do not use photorealism, 3D rendering, watercolor, grunge, engraving, or dark-fantasy illustration. Return only the single centered item icon with a clear transparent margin.
+```
+
+### 升阶药剂
+
+```text
+Create one single production-ready casual match-3 game item icon on a fully transparent square canvas. The icon is a small upgrade elixir: a short faceted glass vial with a thick, smooth deep-plum outline, a warm cream neck, a honey-gold cap, and glowing amber-gold liquid inside. Add a bold upward double-chevron or two ascending diamond marks in warm cream on the vial, plus one tiny violet sparkle, so the icon clearly reads as "raise one tier" without any text. Keep the shape compact, centered, and readable at 28 pixels. Use chunky rounded shapes, saturated violet and honey-gold accents, simple two-tone cel shading, one clean highlight, and the same cheerful casual puzzle-game style as a bright match-3 sprite sheet. The entire background must be fully transparent with alpha 0. Do not draw a frame, badge plate, circle background, grid, checkerboard, shadow outside the object, text, numbers, letters, logo, watermark, or signature. Do not use photorealism, 3D rendering, watercolor, grunge, engraving, or dark-fantasy illustration. Return only the single centered item icon with a clear transparent margin.
+```
+
+替换运行时图标时保持透明背景和文件名不变，建议输出 512×512 后再缩小到 256×256；检查重点是缩到 28 像素时仍能一眼区分“紫色旋涡瓶”和“金色向上瓶”，而不是依赖底部文字。
+
 ## 使用与切片
 
 - 目标尺寸：单格约 512×512，整图约 3072×2048；模型输出更小也可以，后续统一缩放。
@@ -43,6 +67,7 @@ Draw only the sixteen colored vessels, one wildcard, one Holy Grail, one rotatio
 - 同一行保持同一视觉重量。烧杯不能比试管大出一倍，四阶宝石也不能缩成小点。
 - 第一轮先生成并检查轮廓；确认颜色、阶级和透明度后，再决定是否重绘局部。
 - 右下区域的旋转转盘不要作为常驻大图标。游戏内只把它当作悬停、按住或教学提示，建议以 25%–35% 不透明度、55%–65% 缩放和 2–3px 模糊显示。
+- 道具图标在底部栏会同时显示图形、名称和数量；图形负责快速识别，名称负责消除歧义，数量是玩家决定何时使用道具的关键信息。
 
 可选的 UI 与背景装饰提示词见 `docs/art/ui-and-decoration-prompts.md`。
 

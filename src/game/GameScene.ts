@@ -1,6 +1,13 @@
 import Phaser from "phaser";
 import pieceSheetUrl from "../assets/sheet_alchemy_centered.png";
+import bgmUrl from "../assets/audio/bgm-alchemy-loop.mp3";
+import grailUrl from "../assets/audio/grail.mp3";
+import itemUseUrl from "../assets/audio/item-use.mp3";
+import mergeNormalUrl from "../assets/audio/merge-normal.mp3";
+import mergeTier4Url from "../assets/audio/merge-tier4.mp3";
+import uiClickUrl from "../assets/audio/ui-click.mp3";
 import { cloneBoard, findAllMergeGroups, rotateBoardInPlace } from "./board";
+import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio";
 import { GameEngine } from "./engine";
 import { pieceFrame } from "./presentation";
 import { createSeed } from "./rng";
@@ -11,6 +18,7 @@ import {
   type Board,
   type CellPos,
   type GameSnapshot,
+  type ItemType,
   type MergeEvent,
   type Piece,
   type RotationDirection,
@@ -26,12 +34,13 @@ interface SceneCallbacks {
   onHud: (snapshot: GameSnapshot) => void;
   onHover: (group: CellPos | null) => void;
   onChain: (chain: number, timeGain: number) => void;
+  onItemsAwarded: (items: ItemType[]) => void;
   onGameOver: (snapshot: GameSnapshot) => void;
   onReady: () => void;
 }
 
 interface RotationTweenItem {
-  sprite: Phaser.GameObjects.Image;
+  sprite: Phaser.GameObjects.Container;
   target: CellPos;
 }
 
@@ -39,11 +48,14 @@ export class GameScene extends Phaser.Scene {
   private readonly callbacks: SceneCallbacks;
   private engine: GameEngine;
   private pieceLayer!: Phaser.GameObjects.Container;
-  private spritesByPieceId = new Map<number, Phaser.GameObjects.Image>();
+  private spritesByPieceId = new Map<number, Phaser.GameObjects.Container>();
   private hoverGroup: CellPos | null = null;
   private isAnimating = false;
   private gameOverNotified = false;
   private lastHudUpdate = 0;
+  private bgm: Phaser.Sound.BaseSound | null = null;
+  private audioSettings: AudioSettings = { ...DEFAULT_AUDIO_SETTINGS };
+  private lastSfxKey: string | null = null;
 
   constructor(callbacks: SceneCallbacks, initialConfig: RunConfig) {
     super("GameScene");
@@ -56,13 +68,27 @@ export class GameScene extends Phaser.Scene {
       frameWidth: 256,
       frameHeight: 256,
     });
+    this.load.audio("sfx-merge-normal", mergeNormalUrl);
+    this.load.audio("sfx-merge-tier4", mergeTier4Url);
+    this.load.audio("sfx-grail", grailUrl);
+    this.load.audio("sfx-item-use", itemUseUrl);
+    this.load.audio("sfx-ui-click", uiClickUrl);
+    this.load.audio("bgm-alchemy", bgmUrl, {
+      loop: true,
+    });
   }
 
   create(): void {
     this.input.mouse?.disableContextMenu();
+    this.sound.pauseOnBlur = false;
     this.drawBoardBed();
 
     this.pieceLayer = this.add.container(0, 0);
+    this.bgm = this.sound.add("bgm-alchemy", {
+      loop: true,
+      volume: 0,
+    });
+    this.applyAudioSettings();
     this.renderBoard();
     this.bindPointerInput();
     this.callbacks.onReady();
@@ -147,6 +173,11 @@ export class GameScene extends Phaser.Scene {
     return moves;
   }
 
+  setTimeLeftForDebug(ms: number): void {
+    this.engine.timeLeftMs = Math.max(0, ms);
+    this.syncHud();
+  }
+
   rotateForDebug(row: number, col: number, direction: RotationDirection = 1): boolean {
     if (this.isAnimating) return false;
     void this.rotateAt({ row, col }, direction);
@@ -157,6 +188,78 @@ export class GameScene extends Phaser.Scene {
     this.engine.forceGameOver();
     this.clearHover();
     this.syncHud();
+  }
+
+  grantItemForDebug(item: ItemType, count = 1): void {
+    this.engine.items[item] += count;
+    this.syncHud();
+  }
+
+  setAudioSettings(settings: AudioSettings): void {
+    this.audioSettings = { ...settings };
+    this.applyAudioSettings();
+  }
+
+  startMusic(): void {
+    if (!this.bgm) {
+      this.bgm = this.sound.add("bgm-alchemy", {
+        loop: true,
+        volume: 0,
+      });
+    }
+    this.applyAudioSettings();
+    if (!this.bgm.isPlaying) this.bgm.play();
+  }
+
+  playUiClick(): void {
+    this.playSfx("sfx-ui-click", 1);
+  }
+
+  audioState(): {
+    muted: boolean;
+    musicVolume: number;
+    sfxVolume: number;
+    bgmPlaying: boolean;
+    soundLocked: boolean;
+    lastSfx: string | null;
+  } {
+    return {
+      muted: this.audioSettings.muted,
+      musicVolume: this.audioSettings.musicVolume,
+      sfxVolume: this.audioSettings.sfxVolume,
+      bgmPlaying: Boolean(this.bgm?.isPlaying),
+      soundLocked: this.sound.locked,
+      lastSfx: this.lastSfxKey,
+    };
+  }
+
+  async useItem(item: ItemType): Promise<boolean> {
+    if (this.isAnimating || this.engine.status !== "playing") return false;
+    const result = this.engine.useItem(item);
+    if (!result) return false;
+
+    this.playSfx("sfx-item-use", 1);
+    this.isAnimating = true;
+    this.clearHover();
+    this.syncHud();
+    this.renderSnapshot(result.boardAfterItem);
+    this.playItemEffect(result.position, item);
+    await this.wait(this.engine.config.reducedMotion ? 40 : 220);
+
+    if (result.cascade && result.cascade.events.length > 0) {
+      await this.playMergeEvents(result.cascade.events);
+      this.engine.finishResolution();
+    }
+
+    this.renderBoard();
+    this.isAnimating = false;
+    this.syncHud();
+
+    if (this.engine.snapshot().status === "game-over" && !this.gameOverNotified) {
+      this.gameOverNotified = true;
+      this.callbacks.onGameOver(this.engine.snapshot());
+    }
+    return true;
   }
 
   private drawBoardBed(): void {
@@ -225,13 +328,35 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private makePieceSprite(piece: Piece, pos: CellPos): Phaser.GameObjects.Image {
+  private makePieceSprite(piece: Piece, pos: CellPos): Phaser.GameObjects.Container {
     const center = this.cellCenter(pos);
-    const sprite = this.add
+    const container = this.add.container(center.x, center.y);
+    const image = this.add
       .image(center.x, center.y, "pieces", pieceFrame(piece))
       .setDisplaySize(CELL_SIZE * 0.98, CELL_SIZE * 0.98)
-      .setOrigin(0.5);
-    return sprite;
+      .setOrigin(0.5)
+      .setPosition(0, 0);
+    container.add(image);
+
+    if (piece.bonus) {
+      const star = this.add
+        .text(
+          CELL_SIZE * 0.3,
+          -CELL_SIZE * 0.3,
+          "★",
+          {
+            fontFamily: '"Trebuchet MS", "Segoe UI", sans-serif',
+            fontSize: "22px",
+            color: piece.bonus === "wildcard" ? "#d6a4ff" : "#ffe78b",
+            stroke: "#4c1d55",
+            strokeThickness: 4,
+          },
+        )
+        .setOrigin(0.5);
+      container.add(star);
+    }
+
+    return container;
   }
 
   private bindPointerInput(): void {
@@ -392,10 +517,14 @@ export class GameScene extends Phaser.Scene {
     for (const event of events) {
       this.renderSnapshot(event.before);
       this.callbacks.onChain(event.chain, event.timeGain);
+      this.playMergeSound(event.group.result);
       this.playMergeBurst(event);
       await this.animateMergeAndDrop(event);
       this.syncSpritesToBoard(event.after);
       this.playLandingEffect(event);
+      if (event.itemsAwarded.length > 0) {
+        this.callbacks.onItemsAwarded(event.itemsAwarded);
+      }
       await this.wait(this.engine.config.reducedMotion ? 50 : 140);
     }
     await this.wait(this.engine.config.reducedMotion ? 30 : 100);
@@ -408,7 +537,7 @@ export class GameScene extends Phaser.Scene {
         return piece ? { piece, sprite: this.spritesByPieceId.get(piece.id) } : null;
       })
       .filter(
-        (entry): entry is { piece: Piece; sprite: Phaser.GameObjects.Image } =>
+        (entry): entry is { piece: Piece; sprite: Phaser.GameObjects.Container } =>
           Boolean(entry?.sprite),
       );
 
@@ -552,6 +681,40 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private playMergeSound(result: MergeEvent["group"]["result"]): void {
+    if (result === "grail") {
+      this.playSfx("sfx-grail", 1);
+      return;
+    }
+    if (result === 4) {
+      this.playSfx("sfx-merge-tier4", 1);
+      return;
+    }
+    this.playSfx("sfx-merge-normal", 0.6);
+  }
+
+  private playSfx(key: string, gain: number): void {
+    if (this.audioSettings.muted) return;
+    const volume = Phaser.Math.Clamp(this.audioSettings.sfxVolume * gain, 0, 1);
+    if (volume <= 0) return;
+    this.lastSfxKey = key;
+    this.sound.play(key, { volume });
+  }
+
+  private applyAudioSettings(): void {
+    this.sound.mute = this.audioSettings.muted;
+    if (!this.bgm) return;
+    const sound = this.bgm as Phaser.Sound.BaseSound & {
+      setVolume?: (value: number) => unknown;
+      volume?: number;
+    };
+    if (typeof sound.setVolume === "function") {
+      sound.setVolume(this.audioSettings.musicVolume);
+    } else {
+      sound.volume = this.audioSettings.musicVolume;
+    }
+  }
+
   private playLandingEffect(event: MergeEvent): void {
     let resultPosition = event.anchor;
     for (let row = 0; row < BOARD_SIZE; row += 1) {
@@ -599,6 +762,52 @@ export class GameScene extends Phaser.Scene {
       y: center.y - (this.engine.config.reducedMotion ? 28 : 56),
       alpha: 0,
       duration: this.engine.config.reducedMotion ? 300 : 720,
+      ease: "Cubic.Out",
+      onComplete: () => label.destroy(),
+    });
+  }
+
+  private playItemEffect(position: CellPos, item: ItemType): void {
+    const center = this.cellCenter(position);
+    const glow = this.add
+      .image(center.x, center.y, "pieces", 17)
+      .setOrigin(0.5)
+      .setDepth(22)
+      .setTint(item === "wildcard" ? 0xb96cf0 : 0xffdf72)
+      .setAlpha(0.9);
+    const base = (CELL_SIZE * 0.95) / 256;
+    glow.setScale(base * 0.25);
+    this.tweens.add({
+      targets: glow,
+      scaleX: base * 1.25,
+      scaleY: base * 1.25,
+      alpha: 0,
+      duration: this.engine.config.reducedMotion ? 80 : 360,
+      ease: "Cubic.Out",
+      onComplete: () => glow.destroy(),
+    });
+
+    const label = this.add
+      .text(
+        center.x,
+        center.y - CELL_SIZE * 0.38,
+        item === "wildcard" ? "万能化" : "升阶",
+        {
+          fontFamily: '"Trebuchet MS", "Segoe UI", sans-serif',
+          fontSize: "18px",
+          fontStyle: "bold",
+          color: item === "wildcard" ? "#e6c2ff" : "#ffe9a3",
+          stroke: "#3a1745",
+          strokeThickness: 5,
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(24);
+    this.tweens.add({
+      targets: label,
+      y: label.y - 28,
+      alpha: 0,
+      duration: this.engine.config.reducedMotion ? 240 : 650,
       ease: "Cubic.Out",
       onComplete: () => label.destroy(),
     });

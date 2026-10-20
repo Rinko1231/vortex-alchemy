@@ -9,6 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "playtest": "node scripts/playtest.mjs",
     "sprites:normalize": "node scripts/normalize-piece-sheet.mjs",
+    "sprites:items": "node scripts/extract-item-icons.mjs",
+    "sprites:items:import": "node scripts/import-item-icons.mjs",
     "test": "vitest run"
   },
   "dependencies": {

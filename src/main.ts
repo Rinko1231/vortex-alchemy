@@ -2,6 +2,13 @@ import Phaser from "phaser";
 import "./styles.css";
 import { GameScene } from "./game/GameScene";
 import {
+  DEFAULT_AUDIO_SETTINGS,
+  loadAudioSettings,
+  normalizeAudioSettings,
+  saveAudioSettings,
+  type AudioSettings,
+} from "./game/audio";
+import {
   DEFAULT_CONFIG,
   isDefaultConfig,
   loadConfig,
@@ -13,6 +20,7 @@ import { formatScore, formatTime } from "./game/presentation";
 import type {
   CellPos,
   GameSnapshot,
+  ItemType,
   Piece,
   RotationDirection,
 } from "./game/types";
@@ -31,11 +39,19 @@ function element<T extends HTMLElement>(id: string): T {
 const ui = {
   scoreIcon: element<HTMLImageElement>("score-icon"),
   helpIcon: element<HTMLImageElement>("help-icon"),
+  soundButton: element<HTMLButtonElement>("sound-button"),
+  soundIcon: element<HTMLImageElement>("sound-icon"),
   pauseIcon: element<HTMLImageElement>("pause-icon"),
   settingsIcon: element<HTMLImageElement>("settings-icon"),
   rotateHintImage: element<HTMLImageElement>("rotate-hint-image"),
   chainIcon: element<HTMLImageElement>("chain-icon"),
   grailIcon: element<HTMLImageElement>("grail-icon"),
+  itemWildcardButton: element<HTMLButtonElement>("item-wildcard-button"),
+  itemUpgradeButton: element<HTMLButtonElement>("item-upgrade-button"),
+  itemWildcardIcon: element<HTMLImageElement>("item-wildcard-icon"),
+  itemUpgradeIcon: element<HTMLImageElement>("item-upgrade-icon"),
+  itemWildcardCount: element<HTMLElement>("item-wildcard-count"),
+  itemUpgradeCount: element<HTMLElement>("item-upgrade-count"),
   ribbonImage: element<HTMLImageElement>("ribbon-image"),
   scoreValue: element<HTMLElement>("score-value"),
   timeValue: element<HTMLElement>("time-value"),
@@ -66,6 +82,7 @@ const ui = {
 };
 
 let config = loadConfig();
+let audioSettings = loadAudioSettings();
 let sceneReady = false;
 let scene: GameScene;
 let lastSnapshot: GameSnapshot | null = null;
@@ -96,11 +113,14 @@ function setImage(image: HTMLImageElement, source: string): void {
 function applyUiAssets(): void {
   setImage(ui.scoreIcon, UI_ASSETS.badgeScore);
   setImage(ui.helpIcon, UI_ASSETS.iconHelp);
+  setImage(ui.soundIcon, UI_ASSETS.iconSoundOn);
   setImage(ui.pauseIcon, UI_ASSETS.iconPause);
   setImage(ui.settingsIcon, UI_ASSETS.iconSettings);
   setImage(ui.rotateHintImage, UI_ASSETS.rotateHint);
   setImage(ui.chainIcon, UI_ASSETS.badgeChain);
   setImage(ui.grailIcon, UI_ASSETS.badgeGrail);
+  setImage(ui.itemWildcardIcon, UI_ASSETS.itemWildcard);
+  setImage(ui.itemUpgradeIcon, UI_ASSETS.itemUpgrade);
   setImage(ui.ribbonImage, UI_ASSETS.ribbon);
 
   const root = document.documentElement.style;
@@ -118,14 +138,47 @@ function setLayerVisible(layer: HTMLElement, visible: boolean): void {
   layer.classList.toggle("hidden", !visible);
 }
 
+function updateSoundButton(): void {
+  ui.soundIcon.src = audioSettings.muted ? UI_ASSETS.iconSoundOff : UI_ASSETS.iconSoundOn;
+  const label = audioSettings.muted ? "开启声音" : "关闭声音";
+  ui.soundButton.setAttribute("aria-label", label);
+  ui.soundButton.title = label;
+  ui.soundButton.classList.toggle("muted", audioSettings.muted);
+}
+
+function applyAudioSettings(next: AudioSettings): void {
+  audioSettings = saveAudioSettings(normalizeAudioSettings(next));
+  scene.setAudioSettings(audioSettings);
+  updateSoundButton();
+}
+
+function toggleSound(): void {
+  if (!audioSettings.muted) scene.playUiClick();
+  audioSettings = saveAudioSettings({
+    ...audioSettings,
+    muted: !audioSettings.muted,
+  });
+  scene.setAudioSettings(audioSettings);
+  updateSoundButton();
+  if (!audioSettings.muted) scene.playUiClick();
+  flashMessage(audioSettings.muted ? "声音已关闭" : "声音已开启");
+}
+
 function updateHud(snapshot: GameSnapshot): void {
   lastSnapshot = snapshot;
   ui.timeValue.textContent = formatTime(snapshot.timeLeftMs);
   ui.scoreValue.textContent = formatScore(snapshot.score);
   ui.chainValue.textContent = String(snapshot.chain);
   ui.grailValue.textContent = String(snapshot.grails);
+  ui.itemWildcardCount.textContent = String(snapshot.items.wildcard);
+  ui.itemUpgradeCount.textContent = String(snapshot.items.upgrade);
   ui.bestValue.textContent = formatScore(bestScore);
-  ui.timerPlate.classList.toggle("danger", snapshot.timeLeftMs <= 10_000);
+  ui.timerPlate.classList.toggle("danger", snapshot.timeLeftMs <= 15_000);
+  const canUseItems = snapshot.status === "playing";
+  ui.itemWildcardButton.disabled = !canUseItems || snapshot.items.wildcard <= 0;
+  ui.itemUpgradeButton.disabled = !canUseItems || snapshot.items.upgrade <= 0;
+  ui.itemWildcardButton.classList.toggle("ready", snapshot.items.wildcard > 0);
+  ui.itemUpgradeButton.classList.toggle("ready", snapshot.items.upgrade > 0);
 }
 
 function flashMessage(message: string): void {
@@ -135,6 +188,19 @@ function flashMessage(message: string): void {
   chainToastTimer = window.setTimeout(() => {
     ui.chainToast.classList.remove("visible");
   }, 900);
+}
+
+async function activateItem(item: ItemType): Promise<void> {
+  if (!lastSnapshot || lastSnapshot.status !== "playing") return;
+  const used = await scene.useItem(item);
+  if (!used) {
+    if (lastSnapshot.items[item] > 0) {
+      flashMessage(item === "wildcard" ? "没有可万能化的目标" : "没有可升阶的一、二阶棋子");
+    }
+    return;
+  }
+  flashMessage(item === "wildcard" ? "万能精粹已使用" : "升阶药剂已使用");
+  updateHud(scene.getSnapshot());
 }
 
 function showHover(group: CellPos | null): void {
@@ -170,6 +236,7 @@ function startGame(): void {
   setLayerVisible(ui.gameOverScreen, false);
   hideHover();
   scene.startRun(config);
+  scene.startMusic();
   updateHud(scene.getSnapshot());
   flashMessage("实验开始");
 }
@@ -281,6 +348,8 @@ function openHelp(origin: "start" | "game" | "pause" = "start"): void {
       <li>四颗同色同阶的一、二、三阶棋子会合成高一阶。四阶是同色路线的终点。</li>
       <li>紫色万能黏胶只能替代一阶。四颗万能黏胶也能直接炼成圣杯。</li>
       <li>黑、白、红、黄各一颗四阶宝石时，合成圣杯并换来大笔时间。</li>
+      <li>每炼成一个圣杯，后续新棋子出现二阶的概率都会提高。</li>
+      <li>带星标的奖励棋子参与合并时会给出道具：万能精粹把随机核心棋子变成万能；升阶药剂把随机一阶或二阶核心升一阶。</li>
       <li>合并后棋子会沿列向下落，空出的位置由棋盘上方的新棋子补入；落定后的盘面若再次形成合并，就会进入下一段连锁。</li>
       <li>圣杯可以被做出来，也可以转动，但不能再作为材料参与合并。</li>
     </ul>
@@ -313,6 +382,19 @@ function numberField(
   `;
 }
 
+function volumeField(id: string, label: string, value: number): string {
+  const percent = Math.round(value * 100);
+  return `
+    <label class="setting-row" for="${id}">
+      <span>${label}</span>
+      <span class="setting-control">
+        <input id="${id}" class="volume-input" type="range" min="0" max="1" step="0.05" value="${value}" />
+        <span id="${id}-value" class="setting-unit volume-value">${percent}%</span>
+      </span>
+    </label>
+  `;
+}
+
 function settingsTemplate(current: RunConfig, origin: SettingsOrigin): string {
   const restartLabel =
     origin === "start" || origin === "gameover" ? "保存并开始" : "保存并重开";
@@ -323,11 +405,11 @@ function settingsTemplate(current: RunConfig, origin: SettingsOrigin): string {
     <form id="settings-form" class="settings-form">
       <fieldset>
         <legend>时间</legend>
-        ${numberField("cfg-start", "开局倒计时", current.startingTimeSec, 30, 300, 5, "秒")}
-        ${numberField("cfg-g2", "一阶 → 二阶", current.gainTier2, 0, 10, 0.5, "秒")}
-        ${numberField("cfg-g3", "二阶 → 三阶", current.gainTier3, 0, 20, 0.5, "秒")}
-        ${numberField("cfg-g4", "三阶 → 四阶", current.gainTier4, 0, 30, 0.5, "秒")}
-        ${numberField("cfg-grail", "圣杯加时", current.gainGrail, 0, 120, 1, "秒")}
+        ${numberField("cfg-start", "开局倒计时", current.startingTimeSec, 60, 900, 1, "秒")}
+        ${numberField("cfg-g2", "一阶 → 二阶", current.gainTier2, 0, 20, 0.5, "秒")}
+        ${numberField("cfg-g3", "二阶 → 三阶", current.gainTier3, 0, 40, 0.5, "秒")}
+        ${numberField("cfg-g4", "三阶 → 四阶", current.gainTier4, 0, 60, 0.5, "秒")}
+        ${numberField("cfg-grail", "圣杯加时", current.gainGrail, 0, 600, 5, "秒")}
         ${numberField("cfg-chain-step", "每层连锁加成", current.chainStep, 0, 0.5, 0.05, "倍")}
         ${numberField("cfg-chain-cap", "连锁倍率上限", current.chainCap, 1, 5, 0.25, "倍")}
       </fieldset>
@@ -336,7 +418,9 @@ function settingsTemplate(current: RunConfig, origin: SettingsOrigin): string {
         ${numberField("cfg-tier1", "一阶权重", current.tier1Weight, 0, 100, 1, "%")}
         ${numberField("cfg-tier2", "二阶权重", current.tier2Weight, 0, 100, 1, "%")}
         ${numberField("cfg-wildcard", "万能权重", current.wildcardWeight, 0, 100, 1, "%")}
-        <p id="weight-note" class="small-note">三项会自动归一化，不需要手动凑到 100%。</p>
+        ${numberField("cfg-tier2-grail", "每个圣杯追加二阶", current.tier2BonusPerGrail, 0, 20, 1, "%")}
+        ${numberField("cfg-bonus-chance", "奖励棋子概率", current.bonusChance, 0, 30, 1, "%")}
+        <p id="weight-note" class="small-note">阶级权重会自动归一化；圣杯会让二阶出现率逐步提高，奖励棋子带星标。</p>
       </fieldset>
       <fieldset>
         <legend>操作与辅助</legend>
@@ -348,6 +432,12 @@ function settingsTemplate(current: RunConfig, origin: SettingsOrigin): string {
           <input id="cfg-reduced" type="checkbox" ${current.reducedMotion ? "checked" : ""} />
           <span>减弱旋转与特效动态</span>
         </label>
+      </fieldset>
+      <fieldset>
+        <legend>声音</legend>
+        ${volumeField("cfg-music", "音乐音量", audioSettings.musicVolume)}
+        ${volumeField("cfg-sfx", "音效音量", audioSettings.sfxVolume)}
+        <p class="small-note">声音设置保存后立即生效，不需要重开本局。</p>
       </fieldset>
       <div class="settings-actions">
         <button class="text-button primary" type="submit"><span>保存设置</span></button>
@@ -374,8 +464,18 @@ function readFormConfig(): RunConfig {
     tier1Weight: readNumber("cfg-tier1"),
     tier2Weight: readNumber("cfg-tier2"),
     wildcardWeight: readNumber("cfg-wildcard"),
+    tier2BonusPerGrail: readNumber("cfg-tier2-grail"),
+    bonusChance: readNumber("cfg-bonus-chance"),
     reverseRotation: element<HTMLInputElement>("cfg-reverse").checked,
     reducedMotion: element<HTMLInputElement>("cfg-reduced").checked,
+  });
+}
+
+function readFormAudioSettings(): AudioSettings {
+  return normalizeAudioSettings({
+    muted: audioSettings.muted,
+    musicVolume: readNumber("cfg-music"),
+    sfxVolume: readNumber("cfg-sfx"),
   });
 }
 
@@ -391,12 +491,25 @@ function writeFormConfig(value: RunConfig): void {
     ["cfg-tier1", value.tier1Weight],
     ["cfg-tier2", value.tier2Weight],
     ["cfg-wildcard", value.wildcardWeight],
+    ["cfg-tier2-grail", value.tier2BonusPerGrail],
+    ["cfg-bonus-chance", value.bonusChance],
   ];
   for (const [id, fieldValue] of fields) {
     element<HTMLInputElement>(id).value = String(fieldValue);
   }
   element<HTMLInputElement>("cfg-reverse").checked = value.reverseRotation;
   element<HTMLInputElement>("cfg-reduced").checked = value.reducedMotion;
+}
+
+function writeFormAudioSettings(value: AudioSettings): void {
+  const fields: Array<[string, number]> = [
+    ["cfg-music", value.musicVolume],
+    ["cfg-sfx", value.sfxVolume],
+  ];
+  for (const [id, fieldValue] of fields) {
+    element<HTMLInputElement>(id).value = String(fieldValue);
+    element<HTMLElement>(`${id}-value`).textContent = `${Math.round(fieldValue * 100)}%`;
+  }
 }
 
 function applySavedConfig(next: RunConfig): void {
@@ -418,20 +531,31 @@ function openSettings(origin: SettingsOrigin): void {
 
   openModal(settingsTemplate(config, origin));
   const form = element<HTMLFormElement>("settings-form");
+  for (const id of ["cfg-music", "cfg-sfx"]) {
+    const input = element<HTMLInputElement>(id);
+    input.addEventListener("input", () => {
+      element<HTMLElement>(`${id}-value`).textContent = `${Math.round(
+        input.valueAsNumber * 100,
+      )}%`;
+    });
+  }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     applySavedConfig(readFormConfig());
+    applyAudioSettings(readFormAudioSettings());
     if (origin === "start") scene.previewConfig(config);
     closeModal(true);
-    flashMessage("设置已保存，下一局生效");
+    flashMessage("声音已生效，玩法参数下一局生效");
   });
   element<HTMLButtonElement>("settings-save-restart").addEventListener("click", () => {
     applySavedConfig(readFormConfig());
+    applyAudioSettings(readFormAudioSettings());
     closeModal(false);
     startGame();
   });
   element<HTMLButtonElement>("settings-reset").addEventListener("click", () => {
     writeFormConfig(DEFAULT_CONFIG);
+    writeFormAudioSettings(DEFAULT_AUDIO_SETTINGS);
     flashMessage("已填回默认值，保存后生效");
   });
 }
@@ -452,6 +576,7 @@ function handleVisibility(): void {
 }
 
 applyUiAssets();
+updateSoundButton();
 document.documentElement.classList.toggle("reduced-motion", config.reducedMotion);
 ui.bestValue.textContent = formatScore(bestScore);
 ui.startButton.disabled = true;
@@ -463,9 +588,20 @@ const callbacks = {
   onChain: (chain: number, timeGain: number) => {
     flashMessage(`连锁 ×${chain}  +${timeGain.toFixed(1)} 秒`);
   },
+  onItemsAwarded: (items: ItemType[]) => {
+    const wildcard = items.filter((item) => item === "wildcard").length;
+    const upgrade = items.filter((item) => item === "upgrade").length;
+    const rewards = [
+      wildcard > 0 ? `万能精粹 ×${wildcard}` : "",
+      upgrade > 0 ? `升阶药剂 ×${upgrade}` : "",
+    ].filter(Boolean);
+    flashMessage(`获得道具：${rewards.join("、")}`);
+  },
   onGameOver: showGameOver,
   onReady: () => {
     sceneReady = true;
+    scene.setAudioSettings(audioSettings);
+    updateSoundButton();
     ui.startButton.disabled = false;
     ui.startButton.querySelector("span")!.textContent = "开始实验";
   },
@@ -492,6 +628,7 @@ new Phaser.Game({
 ui.startButton.addEventListener("click", startGame);
 ui.startSettingsButton.addEventListener("click", () => openSettings("start"));
 ui.helpButton.addEventListener("click", () => openHelp("game"));
+ui.soundButton.addEventListener("click", toggleSound);
 ui.pauseButton.addEventListener("click", togglePause);
 ui.settingsButton.addEventListener("click", () => openSettings("game"));
 ui.modalClose.addEventListener("click", () => closeModal(true));
@@ -500,6 +637,25 @@ ui.modalBackdrop.addEventListener("click", (event) => {
 });
 ui.restartButton.addEventListener("click", startGame);
 ui.resultSettingsButton.addEventListener("click", () => openSettings("gameover"));
+ui.itemWildcardButton.addEventListener("click", () => {
+  void activateItem("wildcard");
+});
+ui.itemUpgradeButton.addEventListener("click", () => {
+  void activateItem("upgrade");
+});
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const button = event.target.closest("button");
+  if (!button || button.disabled || !sceneReady) return;
+  if (
+    button === ui.soundButton ||
+    button === ui.itemWildcardButton ||
+    button === ui.itemUpgradeButton
+  ) {
+    return;
+  }
+  scene.playUiClick();
+});
 document.addEventListener("visibilitychange", handleVisibility);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && ui.modalBackdrop.classList.contains("visible")) {
@@ -516,8 +672,18 @@ declare global {
       board: () => Array<Piece | null>;
       moves: () => Array<{ row: number; col: number; direction: RotationDirection }>;
       end: () => void;
+      setTime: (milliseconds: number) => void;
+      grantItem: (item: ItemType, count?: number) => void;
       setConfig: (partial: Partial<RunConfig>) => RunConfig;
       getConfig: () => RunConfig;
+      audio: () => {
+        muted: boolean;
+        musicVolume: number;
+        sfxVolume: number;
+        bgmPlaying: boolean;
+        soundLocked: boolean;
+        lastSfx: string | null;
+      };
     };
   }
 }
@@ -529,10 +695,13 @@ window.__vortex = {
   board: () => scene.getBoard(),
   moves: () => scene.findPlayableMoves(),
   end: () => scene.endRunForDebug(),
+  setTime: (milliseconds) => scene.setTimeLeftForDebug(milliseconds),
+  grantItem: (item, count = 1) => scene.grantItemForDebug(item, count),
   setConfig: (partial) => {
     config = saveConfig(normalizeConfig({ ...config, ...partial }));
     return config;
   },
   getConfig: () => ({ ...config }),
+  audio: () => scene.audioState(),
 };
 

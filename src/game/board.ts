@@ -9,10 +9,12 @@ import {
   isWildcard,
   positionsFor2x2,
   type Board,
+  type CascadeResolution,
   type CellPos,
   type CoreColor,
   type GravityMove,
   type GravityResult,
+  type ItemType,
   type MergeEvent,
   type MergeGroup,
   type Piece,
@@ -41,31 +43,52 @@ export function createCorePiece(
   return { id, kind: "core", color, tier };
 }
 
-export function spawnPiece(id: number, config: RunConfig, rng: Rng): Piece {
+function applyBonus(piece: Piece, config: RunConfig, rng: Rng): Piece {
+  if (piece.kind === "grail" || rng.next() * 100 >= config.bonusChance) return piece;
+  return {
+    ...piece,
+    bonus: rng.next() < 0.5 ? "wildcard" : "upgrade",
+  };
+}
+
+export function spawnPiece(
+  id: number,
+  config: RunConfig,
+  rng: Rng,
+  grailsMade = 0,
+): Piece {
   const tier1 = Math.max(0, config.tier1Weight);
-  const tier2 = Math.max(0, config.tier2Weight);
+  const tier2 = Math.min(
+    80,
+    Math.max(0, config.tier2Weight + config.tier2BonusPerGrail * grailsMade),
+  );
   const wildcard = Math.max(0, config.wildcardWeight);
   const total = tier1 + tier2 + wildcard;
 
   if (total <= 0) {
-    return { id, kind: "core", color: rng.pick(CORE_COLORS), tier: 1 };
+    return applyBonus({ id, kind: "core", color: rng.pick(CORE_COLORS), tier: 1 }, config, rng);
   }
 
   const roll = rng.next() * total;
   if (roll < tier2) {
-    return { id, kind: "core", color: rng.pick(CORE_COLORS), tier: 2 };
+    return applyBonus({ id, kind: "core", color: rng.pick(CORE_COLORS), tier: 2 }, config, rng);
   }
   if (roll < tier2 + wildcard) {
-    return { id, kind: "wildcard" };
+    return applyBonus({ id, kind: "wildcard" }, config, rng);
   }
-  return { id, kind: "core", color: rng.pick(CORE_COLORS), tier: 1 };
+  return applyBonus({ id, kind: "core", color: rng.pick(CORE_COLORS), tier: 1 }, config, rng);
 }
 
-export function fillBoard(config: RunConfig, rng: Rng, startId: number): InitialBoardResult {
+export function fillBoard(
+  config: RunConfig,
+  rng: Rng,
+  startId: number,
+  grailsMade = 0,
+): InitialBoardResult {
   const board: Board = [];
   let nextId = startId;
   for (let index = 0; index < BOARD_SIZE * BOARD_SIZE; index += 1) {
-    board.push(spawnPiece(nextId, config, rng));
+    board.push(spawnPiece(nextId, config, rng, grailsMade));
     nextId += 1;
   }
   return { board, nextId };
@@ -262,6 +285,7 @@ export function applyGravityAndRefill(
   config: RunConfig,
   rng: Rng,
   idCounter: IdCounter,
+  grailsMade = 0,
 ): GravityResult {
   const moves: GravityMove[] = [];
   const spawned: SpawnedPiece[] = [];
@@ -287,7 +311,7 @@ export function applyGravityAndRefill(
 
     const emptyCount = writeRow + 1;
     for (let row = 0; row <= writeRow; row += 1) {
-      const piece = spawnPiece(idCounter.value, config, rng);
+      const piece = spawnPiece(idCounter.value, config, rng, grailsMade);
       idCounter.value += 1;
       board[cellIndex(row, col)] = piece;
       spawned.push({
@@ -301,30 +325,34 @@ export function applyGravityAndRefill(
   return { moves, spawned };
 }
 
-export function resolveBoard(
+function resolveCascades(
   board: Board,
-  rotationCenter: CellPos,
-  direction: RotationDirection,
+  priorityCenter: CellPos,
   config: RunConfig,
   rng: Rng,
   idCounter: IdCounter,
-): RotationOutcome {
-  rotateBoardInPlace(board, rotationCenter.row, rotationCenter.col, direction);
-
+  grailsMade: number,
+): CascadeResolution {
   const events: MergeEvent[] = [];
   let chain = 0;
   let lastAnchor: CellPos | null = null;
   let timeGain = 0;
   let scoreGain = 0;
   let grailsGained = 0;
+  let currentGrailsMade = grailsMade;
+  const itemsAwarded: ItemType[] = [];
 
   while (chain < 64) {
     const groups = findAllMergeGroups(board);
     if (groups.length === 0) break;
 
-    const group = chooseMergeGroup(groups, lastAnchor, rotationCenter);
+    const group = chooseMergeGroup(groups, lastAnchor, priorityCenter);
     const anchor = { row: group.top, col: group.left };
     const before = cloneBoard(board);
+    const eventItems = group.cells.flatMap((position) => {
+      const piece = before[cellIndex(position.row, position.col)];
+      return piece?.bonus ? [piece.bonus] : [];
+    });
     const result = mergedPiece(group, idCounter.value);
     idCounter.value += 1;
 
@@ -333,7 +361,18 @@ export function resolveBoard(
     }
     board[cellIndex(anchor.row, anchor.col)] = result;
 
-    const gravity = applyGravityAndRefill(board, config, rng, idCounter);
+    if (group.result === "grail") {
+      grailsGained += 1;
+      currentGrailsMade += 1;
+    }
+
+    const gravity = applyGravityAndRefill(
+      board,
+      config,
+      rng,
+      idCounter,
+      currentGrailsMade,
+    );
     const after = cloneBoard(board);
 
     chain += 1;
@@ -343,7 +382,7 @@ export function resolveBoard(
 
     timeGain += eventTime;
     scoreGain += eventScore;
-    if (group.result === "grail") grailsGained += 1;
+    itemsAwarded.push(...eventItems);
 
     events.push({
       chain,
@@ -352,6 +391,7 @@ export function resolveBoard(
       result,
       timeGain: eventTime,
       scoreGain: eventScore,
+      itemsAwarded: eventItems,
       before,
       moves: gravity.moves,
       spawned: gravity.spawned,
@@ -361,14 +401,41 @@ export function resolveBoard(
   }
 
   return {
-    center: rotationCenter,
-    direction,
     chain,
     timeGain,
     scoreGain,
     grailsGained,
+    itemsAwarded,
     events,
   };
+}
+
+export function resolveBoard(
+  board: Board,
+  rotationCenter: CellPos,
+  direction: RotationDirection,
+  config: RunConfig,
+  rng: Rng,
+  idCounter: IdCounter,
+  grailsMade = 0,
+): RotationOutcome {
+  rotateBoardInPlace(board, rotationCenter.row, rotationCenter.col, direction);
+  return {
+    ...resolveCascades(board, rotationCenter, config, rng, idCounter, grailsMade),
+    center: rotationCenter,
+    direction,
+  };
+}
+
+export function resolveExistingCascades(
+  board: Board,
+  config: RunConfig,
+  rng: Rng,
+  idCounter: IdCounter,
+  priorityCenter: CellPos,
+  grailsMade = 0,
+): CascadeResolution {
+  return resolveCascades(board, priorityCenter, config, rng, idCounter, grailsMade);
 }
 
 export function countGrails(board: Board): number {

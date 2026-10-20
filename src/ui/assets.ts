@@ -1,4 +1,6 @@
 import background from "../assets/vortex_alchemy_bg.png";
+import itemUpgrade from "../assets/items/upgrade-item.png";
+import itemWildcard from "../assets/items/wildcard-item.png";
 import badgeChain from "../assets/ui/badge-chain.png";
 import badgeGrail from "../assets/ui/badge-grail.png";
 import badgeScore from "../assets/ui/badge-score.png";
@@ -32,6 +34,8 @@ export const UI_ASSETS = {
   iconSettings,
   iconSoundOff,
   iconSoundOn,
+  itemUpgrade,
+  itemWildcard,
   panelFrame,
   primaryButton,
   ribbon,

@@ -2,7 +2,7 @@
 
 一款 8×8 棋盘、以 2×2 旋转和同色同阶合并为核心的限时浏览器游戏。
 
-当前状态：可玩的第一版原型。桌面与手机布局、完整合并规则、连锁加时、圣杯、设置、暂停与结算均已接通。
+当前状态：可玩的第一版原型。桌面与手机布局、完整合并规则、连锁加时、圣杯、奖励棋子与两种炼金道具、音效与 BGM、设置、暂停与结算均已接通。
 
 仓库：<https://github.com/Rinko1231/vortex-alchemy>
 
@@ -45,6 +45,12 @@ npm run playtest
 - 万能棋子替代一阶棋子，四万能合成圣杯。
 - 黑、白、红、黄各一颗四阶宝石合成圣杯。
 - 分段加时、连锁倍率、倒计时、暂停与结算。
+- 默认开局 5 分钟，圣杯加 5 分钟；每座圣杯都会提高后续新棋子出现二阶的概率。
+- 四阶宝石合成的基础加时提高到 18 秒，给最后一段四色路线多留一点余量。
+- 奖励棋子带星标，参与合并时掉落万能精粹或升阶药剂；底部状态栏可直接使用。
+- 剩余 15 秒及以下时，倒计时变红并轻微颤抖；减少动态效果时保留静态红色警示。
+- 常规合成、四阶宝石、圣杯、道具和 UI 按钮都有独立音效；游戏开始后循环播放 BGM。
+- 顶部声音按钮可一键静音，设置里可分别调整音乐与音效音量。
 - 开局时间、各阶加时、连锁倍率与补子权重设置。
 - 本地最佳记录、自定义参数提示、桌面与手机布局。
 - 低透明度模糊旋转提示，只在悬停、按住或键盘聚焦时出现。
@@ -64,7 +70,9 @@ npm run playtest
 
 - [游戏设计与核心循环](docs/design/vortex-alchemy-game-design.md)
 - [棋子与核心符号的美术提示词](docs/art/vortex-alchemy-asset-prompt.md)
+- [小道具专属图标提示词](docs/art/vortex-alchemy-asset-prompt.md#小道具图标提示词)
 - [UI 与背景装饰的美术提示词](docs/art/ui-and-decoration-prompts.md)
+- [音效与 BGM 生成提示词](docs/audio/vortex-alchemy-audio-prompts.md)
 
 ## 目录
 
@@ -73,6 +81,8 @@ npm run playtest
 - `src/ui` 与 `src/styles.css` 负责 DOM HUD、设置和响应式布局。
 - `src/assets/ui` 是从 `sheet_ui.png` 自动裁出的透明 UI 切片。
 - `src/assets/sheet_alchemy_centered.png` 是重新居中的运行时棋子图集；运行 `npm run sprites:normalize` 可重建。
+- `src/assets/items` 存放底部道具栏图标；从根目录 `omnipotent.png` 与 `upgrade.png` 导入，可运行 `npm run sprites:items:import` 重建。
+- `src/assets/audio` 存放 BGM 与五个一次性音效，由 Vite 打包并在 Phaser 场景中播放。
 - `scripts/slice-ui.ps1` 可重新生成 UI 切片。
 
 
